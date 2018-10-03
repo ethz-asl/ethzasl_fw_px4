@@ -66,6 +66,8 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/clock.h>
+#include <nuttx/fs/fat.h>
+#include <nuttx/wqueue.h>
 
 #include <board_config.h>
 #include <drivers/drv_hrt.h>
@@ -224,6 +226,7 @@ private:
 
 	uint16_t			_product;	/** product code */
 
+	work_s			_work{};
 	struct hrt_call		_call;
 	unsigned			_call_interval;
 
@@ -253,6 +256,7 @@ private:
 	perf_counter_t		_gyro_reads;
 	perf_counter_t		_mag_reads;
 	perf_counter_t		_sample_perf;
+	perf_counter_t		_spi_perf;
 	perf_counter_t		_bad_transfers;
 
 
@@ -306,6 +310,8 @@ private:
 			temp(0) {}
 	};
 #pragma pack(pop)
+
+	struct ADISReport *_dma_data_buffer;
 
 	/**
 	 * Start automatic measurement.
@@ -510,6 +516,7 @@ ADIS16448::ADIS16448(int bus, const char *path_accel, const char *path_gyro, con
 	_gyro_reads(perf_alloc(PC_COUNT, "adis16448_gyro_read")),
 	_mag_reads(perf_alloc(PC_COUNT, "adis16448_mag_read")),
 	_sample_perf(perf_alloc(PC_ELAPSED, "adis16448_read")),
+	_spi_perf(perf_alloc(PC_ELAPSED, "adis16448_spi_transfer")),
 	_bad_transfers(perf_alloc(PC_COUNT, "adis16448_bad_transfers")),
 	_gyro_filter_x(ADIS16448_GYRO_DEFAULT_RATE, ADIS16448_GYRO_DEFAULT_DRIVER_FILTER_FREQ),
 	_gyro_filter_y(ADIS16448_GYRO_DEFAULT_RATE, ADIS16448_GYRO_DEFAULT_DRIVER_FILTER_FREQ),
@@ -560,6 +567,16 @@ ADIS16448::ADIS16448(int bus, const char *path_accel, const char *path_gyro, con
 	_mag_scale.z_scale  = 1.0f;
 
 	memset(&_call, 0, sizeof(_call));
+
+	// allocate dma memory
+	_dma_data_buffer = (struct ADISReport *)fat_dma_alloc(13*sizeof(uint16_t));
+
+	if(!_dma_data_buffer){
+		PX4_ERR("malloc failed");
+	}
+	else{
+		PX4_ERR("malloc succeded");
+		}
 }
 
 ADIS16448::~ADIS16448()
@@ -590,6 +607,7 @@ ADIS16448::~ADIS16448()
 
 	/* delete the perf counter */
 	perf_free(_sample_perf);
+	perf_free(_spi_perf);
 	perf_free(_accel_reads);
 	perf_free(_gyro_reads);
 	perf_free(_mag_reads);
@@ -1348,14 +1366,15 @@ ADIS16448::start()
 	_mag_reports->flush();
 
 	/* start polling at the specified rate */
-	hrt_call_every(&_call, 1000, _call_interval, (hrt_callout)&ADIS16448::measure_trampoline, this);
+	work_queue(HPWORK, &_work, (worker_t)&ADIS16448::measure_trampoline, this, _call_interval/1000);
+	/*hrt_call_every(&_call, 1000, _call_interval, (hrt_callout)&ADIS16448::measure_trampoline, this);*/
 
 }
 
 void
 ADIS16448::stop()
 {
-	hrt_cancel(&_call);
+	/*hrt_cancel(&_call);*/
 }
 
 void
@@ -1365,12 +1384,13 @@ ADIS16448::measure_trampoline(void *arg)
 
 	/* make another measurement */
 	dev->measure();
+
+	work_queue(HPWORK, &(dev->_work), (worker_t)&ADIS16448::measure_trampoline, dev, dev->_call_interval/1000);
 }
 
 int
 ADIS16448::measure()
 {
-	struct ADISReport adis_report;
 
 	struct Report {
 		int16_t		gyro_x;
@@ -1388,12 +1408,14 @@ ADIS16448::measure()
 
 	/* start measuring */
 	perf_begin(_sample_perf);
+	perf_begin(_spi_perf);
 
 	/*
 	 * Fetch the full set of measurements from the ADIS16448 in one pass (burst read).
 	 */
+	memset(_dma_data_buffer, 0, sizeof(uint16_t)*13);
+	_dma_data_buffer->cmd = ((ADIS16448_GLOB_CMD | DIR_READ) << 8) & 0xff00;
 
-	adis_report.cmd = ((ADIS16448_GLOB_CMD | DIR_READ) << 8) & 0xff00;
 
 	/*
 	 * Report buffers.
@@ -1404,21 +1426,22 @@ ADIS16448::measure()
 
 	grb.timestamp = arb.timestamp = mrb.timestamp = hrt_absolute_time();
 
-	if (OK != transferhword((uint16_t *)&adis_report, ((uint16_t *)&adis_report), sizeof(adis_report) / sizeof(uint16_t))) {
+	if (OK != transferhword((uint16_t *)_dma_data_buffer, ((uint16_t *)_dma_data_buffer), 13)) {
 		return -EIO;
 	}
+	perf_end(_spi_perf);
 
-	report.gyro_x  = (int16_t) adis_report.gyro_x;
-	report.gyro_y  = (int16_t) adis_report.gyro_y;
-	report.gyro_z  = (int16_t) adis_report.gyro_z;
-	report.accel_x = (int16_t) adis_report.accel_x;
-	report.accel_y = (int16_t) adis_report.accel_y;
-	report.accel_z = (int16_t) adis_report.accel_z;
-	report.mag_x   = (int16_t) adis_report.mag_x;
-	report.mag_y   = (int16_t) adis_report.mag_y;
-	report.mag_z   = (int16_t) adis_report.mag_z;
-	report.baro    = (int16_t) adis_report.baro;
-	report.temp    = convert12BitToINT16(adis_report.temp);
+	report.gyro_x  = (int16_t) _dma_data_buffer->gyro_x;
+	report.gyro_y  = (int16_t) _dma_data_buffer->gyro_y;
+	report.gyro_z  = (int16_t) _dma_data_buffer->gyro_z;
+	report.accel_x = (int16_t) _dma_data_buffer->accel_x;
+	report.accel_y = (int16_t) _dma_data_buffer->accel_y;
+	report.accel_z = (int16_t) _dma_data_buffer->accel_z;
+	report.mag_x   = (int16_t) _dma_data_buffer->mag_x;
+	report.mag_y   = (int16_t) _dma_data_buffer->mag_y;
+	report.mag_z   = (int16_t) _dma_data_buffer->mag_z;
+	report.baro    = (int16_t) _dma_data_buffer->baro;
+	report.temp    = convert12BitToINT16(_dma_data_buffer->temp);
 
 	if (report.gyro_x == 0 && report.gyro_y == 0 && report.gyro_z == 0 &&
 	    report.accel_x == 0 && report.accel_y == 0 && report.accel_z == 0 &&
@@ -1574,7 +1597,7 @@ ADIS16448::measure()
 		orb_publish(ORB_ID(sensor_gyro), _gyro->_gyro_topic, &grb);
 	}
 
-	if (!(_pub_blocked) && ((adis_report.status >> 7) & 0x1)) {			/* Mag data validity bit (bit 8 DIAG_STAT) */
+	if (!(_pub_blocked) && ((_dma_data_buffer->status >> 7) & 0x1)) {			/* Mag data validity bit (bit 8 DIAG_STAT) */
 		/* publish it */
 		orb_publish(ORB_ID(sensor_mag), _mag->_mag_topic, &mrb);
 	}

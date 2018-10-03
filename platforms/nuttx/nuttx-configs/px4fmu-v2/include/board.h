@@ -288,6 +288,10 @@
 #define GPIO_SPI4_MOSI	GPIO_SPI4_MOSI_1
 #define GPIO_SPI4_SCK	GPIO_SPI4_SCK_1
 
+#define DMACHAN_SPI4_RX DMAMAP_SPI4_RX_1
+#define DMACHAN_SPI4_TX DMAMAP_SPI4_TX_1
+
+
 /* LED Definitions.  Needed if CONFIG_ARCH_LEDs is defined */
 
 #define LED_STARTED      0
