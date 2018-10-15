@@ -226,7 +226,7 @@ private:
 
 	uint16_t			_product;	/** product code */
 
-	work_s			_work{};
+	work_s			    _work;
 	struct hrt_call		_call;
 	unsigned			_call_interval;
 
@@ -494,7 +494,7 @@ ADIS16448::ADIS16448(int bus, const char *path_accel, const char *path_gyro, con
 	_gyro(new ADIS16448_gyro(this, path_gyro)),
 	_mag(new ADIS16448_mag(this, path_mag)),
 	_product(0),
-	_call{},
+	_work{},
 	_call_interval(0),
 	_gyro_reports(nullptr),
 	_gyro_scale{},
@@ -566,17 +566,15 @@ ADIS16448::ADIS16448(int bus, const char *path_accel, const char *path_gyro, con
 	_mag_scale.z_offset = 0;
 	_mag_scale.z_scale  = 1.0f;
 
-	memset(&_call, 0, sizeof(_call));
-
 	// allocate dma memory
-	_dma_data_buffer = (struct ADISReport *)fat_dma_alloc(13*sizeof(uint16_t));
+    #if defined(CONFIG_FAT_DMAMEMORY)
+	  _dma_data_buffer = (struct ADISReport *)fat_dma_alloc(sizeof(ADISReport));
+    #endif
 
 	if(!_dma_data_buffer){
-		PX4_ERR("malloc failed");
+		PX4_ERR("ADIS16448: DMA Buffer could not be allocated, allocating non-dma space.");
+		_dma_data_buffer = (struct ADISReport*)malloc(sizeof(ADISReport));
 	}
-	else{
-		PX4_ERR("malloc succeded");
-		}
 }
 
 ADIS16448::~ADIS16448()
@@ -587,6 +585,11 @@ ADIS16448::~ADIS16448()
 	/* delete the gyro subdriver */
 	delete _gyro;
 	delete _mag;
+
+	/* free buffer */
+	if(_dma_data_buffer != nullptr){
+	  free(_dma_data_buffer);
+	}
 
 	/* free any existing reports */
 	if (_gyro_reports != nullptr) {
@@ -1367,14 +1370,12 @@ ADIS16448::start()
 
 	/* start polling at the specified rate */
 	work_queue(HPWORK, &_work, (worker_t)&ADIS16448::measure_trampoline, this, _call_interval/1000);
-	/*hrt_call_every(&_call, 1000, _call_interval, (hrt_callout)&ADIS16448::measure_trampoline, this);*/
-
 }
 
 void
 ADIS16448::stop()
 {
-	/*hrt_cancel(&_call);*/
+	work_cancel(HPWORK, &_work);
 }
 
 void
@@ -1413,7 +1414,7 @@ ADIS16448::measure()
 	/*
 	 * Fetch the full set of measurements from the ADIS16448 in one pass (burst read).
 	 */
-	memset(_dma_data_buffer, 0, sizeof(uint16_t)*13);
+	memset(_dma_data_buffer, 0, sizeof(ADISReport));
 	_dma_data_buffer->cmd = ((ADIS16448_GLOB_CMD | DIR_READ) << 8) & 0xff00;
 
 
@@ -1426,7 +1427,7 @@ ADIS16448::measure()
 
 	grb.timestamp = arb.timestamp = mrb.timestamp = hrt_absolute_time();
 
-	if (OK != transferhword((uint16_t *)_dma_data_buffer, ((uint16_t *)_dma_data_buffer), 13)) {
+	if (OK != transferhword((uint16_t *)_dma_data_buffer, ((uint16_t *)_dma_data_buffer), sizeof(ADISReport) / sizeof(uint16_t))) {
 		return -EIO;
 	}
 	perf_end(_spi_perf);
