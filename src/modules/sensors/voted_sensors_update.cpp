@@ -40,7 +40,6 @@
 #include "voted_sensors_update.h"
 
 #include <systemlib/mavlink_log.h>
-#include <mathlib/math/filter/Butter2.hpp>
 
 #include <conversion/rotation.h>
 #include <ecl/geo/geo.h>
@@ -608,9 +607,9 @@ void VotedSensorsUpdate::accel_poll(struct sensor_combined_s &raw)
 
 			// rotate corrected measurements from sensor to body frame
 			accel_data = _board_rotation * accel_data;
-
-			_last_sensor_data[uorb_index].accelerometer_m_s2[0] = accel_data(0);
-			_last_sensor_data[uorb_index].accelerometer_m_s2[1] = accel_data(1);
+  			
+ 			_last_sensor_data[uorb_index].accelerometer_m_s2[0] = accel_data(0);	
+			_last_sensor_data[uorb_index].accelerometer_m_s2[1] = accel_data(1);	
 			_last_sensor_data[uorb_index].accelerometer_m_s2[2] = accel_data(2);
 
 			_last_accel_timestamp[uorb_index] = accel_report.timestamp;
