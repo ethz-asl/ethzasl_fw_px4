@@ -328,6 +328,8 @@ private:
 	math::LowPassFilter2p	_gyro_filter_y;
 	math::LowPassFilter2p	_gyro_filter_z;
 
+	int32_t _cut_all;
+
 	Integrator		_accel_int;
 	Integrator		_gyro_int;
 

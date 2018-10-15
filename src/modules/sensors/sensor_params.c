@@ -233,3 +233,13 @@ PARAM_DEFINE_FLOAT(IMU_GYRO_CUTOFF, 80.0f);
 * @group Sensors
 */
 PARAM_DEFINE_FLOAT(IMU_ACCEL_CUTOFF, 30.0f);
+
+/**
+* Enables cutoff filter for all outputs
+*
+* If true the cutoff filter is applied to everything (controllers, estimators and output)
+*
+* @boolean
+* @group Sensors
+*/
+PARAM_DEFINE_INT32(IMU_CUTOFF_ALL, 0);

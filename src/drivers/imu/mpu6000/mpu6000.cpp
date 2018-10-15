@@ -212,6 +212,8 @@ private:
 	uint8_t			_register_wait;
 	uint64_t		_reset_wait;
 
+	int32_t _cut_all;
+
 	math::LowPassFilter2p	_accel_filter_x;
 	math::LowPassFilter2p	_accel_filter_y;
 	math::LowPassFilter2p	_accel_filter_z;
@@ -717,6 +719,12 @@ MPU6000::init()
 
 	} else {
 		PX4_ERR("IMU_GYRO_CUTOFF param invalid");
+	}
+
+	param_t cut_all_ph = param_find("IMU_CUTOFF_ALL");
+	
+	if (cut_all_ph != PARAM_INVALID && param_get(cut_all_ph, &_cut_all) == PX4_OK) {
+		PX4_INFO("Cutoffs will be used for all outputs");
 	}
 
 	/* do CDev init for the gyro device node, keep it optional */
@@ -2001,7 +2009,14 @@ MPU6000::measure()
 	arb.y = _accel_filter_y.apply(y_in_new);
 	arb.z = _accel_filter_z.apply(z_in_new);
 
-	matrix::Vector3f aval(x_in_new, y_in_new, z_in_new);
+	matrix::Vector3f aval;
+	if(_cut_all){
+		aval = matrix::Vector3f(arb.x, arb.y, arb.z);
+	}
+	else{
+		aval = matrix::Vector3f(x_in_new, y_in_new, z_in_new);
+	}
+
 	matrix::Vector3f aval_integrated;
 
 	bool accel_notify = _accel_int.put(arb.timestamp, aval, aval_integrated, arb.integral_dt);
@@ -2044,7 +2059,14 @@ MPU6000::measure()
 	grb.y = _gyro_filter_y.apply(y_gyro_in_new);
 	grb.z = _gyro_filter_z.apply(z_gyro_in_new);
 
-	matrix::Vector3f gval(x_gyro_in_new, y_gyro_in_new, z_gyro_in_new);
+	matrix::Vector3f gval;
+	if(_cut_all){
+		gval = matrix::Vector3f(grb.x, grb.y, grb.z);
+	}
+	else{
+		gval = matrix::Vector3f(x_gyro_in_new, y_gyro_in_new, z_gyro_in_new);
+	}
+
 	matrix::Vector3f gval_integrated;
 
 	bool gyro_notify = _gyro_int.put(arb.timestamp, gval, gval_integrated, grb.integral_dt);
