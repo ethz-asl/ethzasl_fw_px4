@@ -567,11 +567,11 @@ ADIS16448::ADIS16448(int bus, const char *path_accel, const char *path_gyro, con
 	_mag_scale.z_scale  = 1.0f;
 
 	// allocate dma memory
-    #if defined(CONFIG_FAT_DMAMEMORY)
-	  _dma_data_buffer = (struct ADISReport *)fat_dma_alloc(sizeof(ADISReport));
-    #else
-          _dma_data_buffer = nullptr;
-    #endif
+	#if defined(CONFIG_FAT_DMAMEMORY)
+		_dma_data_buffer = (struct ADISReport *)fat_dma_alloc(sizeof(ADISReport));
+	#else
+		_dma_data_buffer = nullptr;
+	#endif
 
 	if(_dma_data_buffer == nullptr){
 		PX4_ERR("ADIS16448: DMA Buffer could not be allocated, allocating non-dma space.");
@@ -590,7 +590,7 @@ ADIS16448::~ADIS16448()
 
 	/* free buffer */
 	if(_dma_data_buffer != nullptr){
-	  free(_dma_data_buffer);
+		free(_dma_data_buffer);
 	}
 
 	/* free any existing reports */
