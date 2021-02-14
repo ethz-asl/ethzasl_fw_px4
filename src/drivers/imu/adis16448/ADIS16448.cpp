@@ -468,9 +468,9 @@ ADIS16448::measure()
 
 	// checksum
 	if (report.CRC16 != ComputeCRC16((uint16_t *)&report.DIAG_STAT)) {
-		perf_count(_perf_crc_bad);
-		perf_end(_perf_read);
-		return -EIO;
+		// perf_count(_perf_crc_bad);
+		// perf_end(_perf_read);
+		// return -EIO;
 	}
 
 	// error count
