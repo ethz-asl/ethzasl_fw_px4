@@ -18,6 +18,7 @@ add_custom_target(run_config
 )
 
 px4_add_git_submodule(TARGET git_jmavsim PATH "${PX4_SOURCE_DIR}/Tools/jMAVSim")
+px4_add_git_submodule(TARGET git_rotors_simulator PATH "${PX4_SOURCE_DIR}/Tools/rotors_simulator")
 
 # Add support for external project building
 include(ExternalProject)
@@ -85,11 +86,26 @@ ExternalProject_Add(jsbsim_bridge
 	BUILD_ALWAYS 1
 )
 
+ExternalProject_Add(rotors_simulator
+	SOURCE_DIR ${PX4_SOURCE_DIR}/Tools/rotors_simulator/rotors_gazebo_plugins
+	CMAKE_ARGS
+		-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX} -DNO_ROS=TRUE
+	BINARY_DIR ${PX4_BINARY_DIR}/build_rotors_simulator
+	INSTALL_COMMAND ""
+	DEPENDS
+		git_rotors_simulator
+	USES_TERMINAL_CONFIGURE true
+	USES_TERMINAL_BUILD true
+	EXCLUDE_FROM_ALL true
+	BUILD_ALWAYS 1
+)
+
 # create targets for each viewer/model/debugger combination
 set(viewers
 	none
 	jmavsim
 	gazebo
+    rotors
 )
 
 set(debuggers
@@ -176,6 +192,8 @@ foreach(viewer ${viewers})
 					list(APPEND all_posix_vmd_make_targets ${_targ_name})
 					if(viewer STREQUAL "gazebo")
 						add_dependencies(${_targ_name} px4 sitl_gazebo)
+					elseif(viewer STREQUAL "rotors")
+						add_dependencies(${_targ_name} px4 rotors_simulator)
 					elseif(viewer STREQUAL "jmavsim")
 						add_dependencies(${_targ_name} px4 git_jmavsim)
 					endif()
