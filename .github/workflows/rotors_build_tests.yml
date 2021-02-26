@@ -1,0 +1,49 @@
+name: RotorS Build Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  Firmware-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        container:
+        - 'px4io/px4-dev-simulation-focal:2020-11-18' # Gazebo 11
+        - 'px4io/px4-dev-simulation-bionic:2020-11-18' # Gazebo 9
+    container: ${{ matrix.container }}
+    steps:
+    - uses: actions/checkout@v1
+    - name: Prepare ccache timestamp
+      id: ccache_cache_timestamp
+      shell: cmake -P {0}
+      run: |
+        string(TIMESTAMP current_date "%Y-%m-%d-%H;%M;%S" UTC)
+        message("::set-output name=timestamp::${current_date}")
+    - name: ccache cache files
+      uses: actions/cache@v2
+      with:
+        path: ~/.ccache
+        key: sitl_tests-${{matrix.config.build_type}}-ccache-${{steps.ccache_cache_timestamp.outputs.timestamp}}
+        restore-keys: sitl_tests-${{matrix.config.build_type}}-ccache-
+    - name: setup ccache
+      run: |
+          mkdir -p ~/.ccache
+          echo "base_dir = ${GITHUB_WORKSPACE}" > ~/.ccache/ccache.conf
+          echo "compression = true" >> ~/.ccache/ccache.conf
+          echo "compression_level = 6" >> ~/.ccache/ccache.conf
+          echo "max_size = 400M" >> ~/.ccache/ccache.conf
+          ccache -s
+          ccache -z
+    - name: Build Firmware
+      env:
+        DONT_RUN: 1
+      run: make px4_sitl_default rotors
+    - name: ccache post-run px4/firmware
+      run: ccache -s
