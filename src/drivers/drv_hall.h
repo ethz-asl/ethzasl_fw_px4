@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2018 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2018 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,25 +32,25 @@
  ****************************************************************************/
 
 /**
- * @file parameters.cpp
+ * @file drv_hall.h
  *
- * @author Amir Melzer amir.melzer@mavt.ethz.ch>
+ * Hall Effect Magnetic Sensor driver interface.
  */
 
-#include "parameters.h"
+#ifndef _DRV_HALL_H
+#define _DRV_HALL_H
 
-namespace si7210
-{
+#include <stdint.h>
+#include <sys/ioctl.h>
 
-void initialize_parameter_handles(ParameterHandles &parameter_handles)
-{
-}
+#include "drv_sensor.h"
+#include "drv_orb_dev.h"
 
-int update_parameters(const ParameterHandles &parameter_handles, Parameters &parameters)
-{
-	int ret = PX4_OK;
+#define HALL_BASE_DEVICE_PATH	"/dev/hall"
+#define HALL0_DEVICE_PATH		"/dev/hall0"
+#define HALL1_DEVICE_PATH		"/dev/hall1"
+#define HALL2_DEVICE_PATH		"/dev/hall2"
+#define HALL3_DEVICE_PATH		"/dev/hall3"
 
-	return ret;
-}
 
-} /* namespace si7210 */
+#endif /* _DRV_HALL_H */

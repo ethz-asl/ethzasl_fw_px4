@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2018 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2013, 2014 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,6 +30,55 @@
  * POSSIBILITY OF SUCH DAMAGE.
  *
  ****************************************************************************/
-/**
- * SI7210 parameters
- */
+
+#pragma once
+
+#include <string.h>
+#include <drivers/device/i2c.h>
+#include <drivers/drv_hall.h>
+#include <drivers/drv_hrt.h>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/defines.h>
+#include <perf/perf_counter.h>
+#include <uORB/topics/sensor_hall.h>
+#include <uORB/PublicationMulti.hpp>
+
+class __EXPORT Vane : public device::I2C
+{
+public:
+	Vane(int bus, int bus_frequency, int address, unsigned conversion_interval);
+	virtual ~Vane();
+
+	int	init() override;
+
+	int	ioctl(device::file_t *filp, int cmd, unsigned long arg) override;
+
+private:
+	Vane(const Vane &) = delete;
+	Vane &operator=(const Vane &) = delete;
+
+protected:
+	int	probe() override;
+
+	/**
+	* Perform a poll cycle; collect from the previous measurement
+	* and start a new one.
+	*/
+	virtual int	measure() = 0;
+	virtual int	collect() = 0;
+
+	bool			_sensor_ok;
+	int			_measure_interval;
+	bool			_collect_phase;
+
+	uORB::PublicationMulti<sensor_hall_s>	_vane_pub{ORB_ID(sensor_hall)};
+
+	int			_vane_orb_class_instance;
+
+	int			_class_instance;
+
+	unsigned		_conversion_interval;
+
+	perf_counter_t		_sample_perf;
+	perf_counter_t		_comms_errors;
+};

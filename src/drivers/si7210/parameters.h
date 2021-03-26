@@ -41,8 +41,7 @@
  * @author Amir Melzer <amir.melzer@mavt.ethz.ch>
  */
 
-#include <px4_config.h>
-
+#include <px4_platform_common/px4_config.h>
 #include <parameters/param.h>
 #include <mathlib/mathlib.h>
 
