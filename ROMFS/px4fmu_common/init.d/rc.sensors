@@ -111,7 +111,7 @@ fi
 # ADIS16448 spi external IMU
 if param compare -s SENS_EN_ADIS164X 1
 then
-	adis16448 -S start
+	adis16448 -S -R 4 start
 fi
 
 # Hall effect sensors si7210
@@ -170,9 +170,9 @@ if param compare SENS_EXT_I2C_PRB 1
 then
 	# compasses
 	ak09916 -X -R 6 -q start # external AK09916 (Here2) is rotated 270 degrees yaw
-	hmc5883 -T -X -q start
-	ist8308 -X -q start
-	ist8310 -X -q start
+	#hmc5883 -T -X -q start
+	#ist8308 -X -q start
+	#ist8310 -X -q start
 	lis2mdl -X -q start
 	lis3mdl -X -q start
 	qmc5883l -X -q start
