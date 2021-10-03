@@ -50,5 +50,7 @@ param set-default NAV_LOITER_RAD 50
 
 param set-default RWTO_TKOFF 1
 
+param set-default FW_USE_NPFG 1
+
 set MIXER_FILE etc/mixers-sitl/plane_sitl.main.mix
 set MIXER custom
