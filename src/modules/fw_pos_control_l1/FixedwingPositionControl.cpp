@@ -500,6 +500,8 @@ FixedwingPositionControl::status_publish()
 		npfg_status.adapted_period = _npfg.getAdaptedPeriod();
 		npfg_status.p_gain = _npfg.getPGain();
 		npfg_status.time_const = _npfg.getTimeConst();
+		npfg_status.timestamp = hrt_absolute_time();
+		_npfg_status_pub.publish(npfg_status);
 
 	} else {
 		pos_ctrl_status.nav_bearing = _l1_control.nav_bearing();
@@ -507,25 +509,11 @@ FixedwingPositionControl::status_publish()
 		pos_ctrl_status.xtrack_error = _l1_control.crosstrack_error();
 		pos_ctrl_status.acceptance_radius = _l1_control.switch_distance(500.0f);
 
-		npfg_status.lat_accel = 0.0f;
-		npfg_status.lat_accel_ff = 0.0f;
-		npfg_status.heading_ref = 0.0f;
-		npfg_status.bearing = 0.0f;
-		npfg_status.bearing_feas = 0.0f;
-		npfg_status.bearing_feas_on_track = 0.0f;
-		npfg_status.signed_track_error = 0.0f;
-		npfg_status.track_error_bound = 0.0f;
-		npfg_status.airspeed_ref = 0.0f;
-		npfg_status.min_ground_speed_ref = 0.0f;
-		npfg_status.adapted_period = 0.0f;
-		npfg_status.p_gain = 0.0f;
-		npfg_status.time_const = 0.0f;
 	}
 
-	npfg_status.timestamp = hrt_absolute_time();
-
 	_pos_ctrl_status_pub.publish(pos_ctrl_status);
-	_npfg_status_pub.publish(npfg_status);
+
+
 }
 
 void
