@@ -284,6 +284,10 @@ MavlinkReceiver::handle_message(mavlink_message_t *msg)
 		handle_message_trajectory_representation_waypoints(msg);
 		break;
 
+	case MAVLINK_MSG_ID_PATH_REPRESENTATION_DUBINS:
+		handle_message_path_representation_dubins(msg);
+		break;
+
 	case MAVLINK_MSG_ID_ONBOARD_COMPUTER_STATUS:
 		handle_message_onboard_computer_status(msg);
 		break;
@@ -1778,6 +1782,57 @@ MavlinkReceiver::handle_message_trajectory_representation_bezier(mavlink_message
 
 	trajectory_bezier.bezier_order = math::min(trajectory.valid_points, vehicle_trajectory_bezier_s::NUMBER_POINTS);
 	_trajectory_bezier_pub.publish(trajectory_bezier);
+}
+
+void
+MavlinkReceiver::handle_message_path_representation_dubins(mavlink_message_t *msg)
+{
+	// mavlink_trajectory_representation_waypoints_t trajectory;
+	// mavlink_msg_trajectory_representation_waypoints_decode(msg, &trajectory);
+
+	// vehicle_trajectory_waypoint_s trajectory_waypoint{};
+
+	// trajectory_waypoint.timestamp = hrt_absolute_time();
+	// const int number_valid_points = trajectory.valid_points;
+
+	// for (int i = 0; i < vehicle_trajectory_waypoint_s::NUMBER_POINTS; ++i) {
+	// 	trajectory_waypoint.waypoints[i].position[0] = trajectory.pos_x[i];
+	// 	trajectory_waypoint.waypoints[i].position[1] = trajectory.pos_y[i];
+	// 	trajectory_waypoint.waypoints[i].position[2] = trajectory.pos_z[i];
+
+	// 	trajectory_waypoint.waypoints[i].velocity[0] = trajectory.vel_x[i];
+	// 	trajectory_waypoint.waypoints[i].velocity[1] = trajectory.vel_y[i];
+	// 	trajectory_waypoint.waypoints[i].velocity[2] = trajectory.vel_z[i];
+
+	// 	trajectory_waypoint.waypoints[i].acceleration[0] = trajectory.acc_x[i];
+	// 	trajectory_waypoint.waypoints[i].acceleration[1] = trajectory.acc_y[i];
+	// 	trajectory_waypoint.waypoints[i].acceleration[2] = trajectory.acc_z[i];
+
+	// 	trajectory_waypoint.waypoints[i].yaw = trajectory.pos_yaw[i];
+	// 	trajectory_waypoint.waypoints[i].yaw_speed = trajectory.vel_yaw[i];
+
+	// 	trajectory_waypoint.waypoints[i].type = UINT8_MAX;
+	// }
+
+	// for (int i = 0; i < number_valid_points; ++i) {
+	// 	trajectory_waypoint.waypoints[i].point_valid = true;
+	// }
+
+	// for (int i = number_valid_points; i < vehicle_trajectory_waypoint_s::NUMBER_POINTS; ++i) {
+	// 	trajectory_waypoint.waypoints[i].point_valid = false;
+	// }
+
+	// _trajectory_waypoint_pub.publish(trajectory_waypoint);
+
+	//Publish offboard control mode messages
+	offboard_control_mode_s ocm{};
+	ocm.position = true;
+	ocm.velocity = false;
+	ocm.acceleration = false;
+
+	// publish offboard_control_mode
+	ocm.timestamp = hrt_absolute_time();
+	_offboard_control_mode_pub.publish(ocm);
 }
 
 void
