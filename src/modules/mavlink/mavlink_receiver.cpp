@@ -1782,6 +1782,16 @@ MavlinkReceiver::handle_message_trajectory_representation_bezier(mavlink_message
 
 	trajectory_bezier.bezier_order = math::min(trajectory.valid_points, vehicle_trajectory_bezier_s::NUMBER_POINTS);
 	_trajectory_bezier_pub.publish(trajectory_bezier);
+
+	//Publish offboard control mode messages
+	offboard_control_mode_s ocm{};
+	ocm.position = true;
+	ocm.velocity = false;
+	ocm.acceleration = false;
+
+	// publish offboard_control_mode
+	ocm.timestamp = hrt_absolute_time();
+	_offboard_control_mode_pub.publish(ocm);
 }
 
 void
