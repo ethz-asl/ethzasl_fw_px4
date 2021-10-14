@@ -149,6 +149,7 @@ set(msg_files
 	timesync.msg
 	timesync_status.msg
 	trajectory_bezier.msg
+	trajectory_dubins.msg
 	trajectory_waypoint.msg
 	transponder_report.msg
 	tune_control.msg
@@ -185,6 +186,7 @@ set(msg_files
 	vehicle_torque_setpoint.msg
 	vehicle_trajectory_bezier.msg
 	vehicle_trajectory_waypoint.msg
+	vehicle_trajectory_dubins.msg
 	vtol_vehicle_status.msg
 	wheel_encoders.msg
 	wind.msg

@@ -1787,12 +1787,12 @@ MavlinkReceiver::handle_message_trajectory_representation_bezier(mavlink_message
 void
 MavlinkReceiver::handle_message_path_representation_dubins(mavlink_message_t *msg)
 {
-	// mavlink_trajectory_representation_waypoints_t trajectory;
-	// mavlink_msg_trajectory_representation_waypoints_decode(msg, &trajectory);
+	mavlink_path_representation_dubins_t trajectory;
+	mavlink_msg_path_representation_dubins_decode(msg, &trajectory);
 
-	// vehicle_trajectory_waypoint_s trajectory_waypoint{};
+	vehicle_path_dubins_s path_dubins{};
 
-	// trajectory_waypoint.timestamp = hrt_absolute_time();
+	path_dubins.timestamp = hrt_absolute_time();
 	// const int number_valid_points = trajectory.valid_points;
 
 	// for (int i = 0; i < vehicle_trajectory_waypoint_s::NUMBER_POINTS; ++i) {
