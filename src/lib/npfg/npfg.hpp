@@ -118,12 +118,12 @@ public:
 	/*
 	 * Set the nominal airspeed reference [m/s].
 	 */
-	void setAirspeedNom(float airsp) { airspeed_nom_ = math::max(airsp, 0.1f); }
+	void setAirspeedNom(float airsp) { airspeed_nom_ = math::constrain(airsp, MIN_AIRSPEED, airspeed_max_); }
 
 	/*
 	 * Set the maximum airspeed reference [m/s].
 	 */
-	void setAirspeedMax(float airsp) { airspeed_max_ = math::max(airsp, 0.1f); }
+	void setAirspeedMax(float airsp) { airspeed_max_ = math::max(airsp, airspeed_nom_); }
 
 	/*
 	 * Set the autopilot roll response time constant [s].
@@ -131,9 +131,9 @@ public:
 	void setRollTimeConst(float tc) { roll_time_const_ = math::max(tc, 0.1f); }
 
 	/*
-	 * Set the airspeed buffer size.
+	 * Set the wind ratio buffer size.
 	 */
-	void setAirspeedBuffer(float buf) { airspeed_buffer_ = math::max(buf, 0.1f); }
+	void setWindRatioBuffer(float buf) { wind_ratio_buffer_ = math::constrain(buf, 0.01f, 0.2f); }
 
 	/*
 	 * @return Controller proportional gain [rad/s]
@@ -335,14 +335,22 @@ public:
 private:
 
 	static constexpr float EPSILON = 1.0e-4;
+	static constexpr float MIN_AIRSPEED = 1.0f; // constrain airspeed to avoid singularities [m/s]
 	static constexpr float MIN_RADIUS = 0.5f; // minimum effective radius (avoid singularities) [m]
-	static constexpr float PERIOD_SAFETY_FACTOR = 4.0f; // multiplier for period lower bound [s]
+	static constexpr float PERIOD_SAFETY_FACTOR = 4.0f; // multiplier for period lower bound
 
-	float period_{20.0f}; // nominal (desired) period -- user defined [s]
-	float damping_{0.7071f}; // nominal (desired) damping ratio -- user defined
-	float p_gain_{0.4442}; // proportional gain (computed from period_ and damping_) [rad/s]
-	float time_const_{14.142f}; // time constant (computed from period_ and damping_) [s]
-	float adapted_period_{20.0f}; // auto-adapted period (if stability bounds enabled) [s]
+	/* pre-computed constants for linear cut-off function for bearing feasibility calculation */
+	static constexpr float CROSS_WIND_ANG_CO =
+		0.02; // cross wind angle cut-off below which the feasibility barrier function is finite and linear [rad] (= approx. 1 deg)
+	static constexpr float ONE_DIV_SIN_CROSS_WIND_ANG_CO = 50.003333488895450; // 1/sin(CROSS_WIND_ANG_CO)
+	static constexpr float CO_SLOPE =
+		2499.833309998360; // cross wind angle cut-off slope = cos(CROSS_WIND_ANG_CO)/sin(CROSS_WIND_ANG_CO)^2
+
+	float period_{30.0f}; // nominal (desired) period -- user defined [s]
+	float damping_{0.25f}; // nominal (desired) damping ratio -- user defined
+	float p_gain_{0.12566f}; // proportional gain (computed from period_ and damping_) [rad/s]
+	float time_const_{9.0f}; // time constant (computed from period_ and damping_) [s]
+	float adapted_period_{30.0f}; // auto-adapted period (if stability bounds enabled) [s]
 
 	bool en_period_lb_{true}; // enables automatic lower bound constraints on controller period
 	bool en_period_ub_{true}; // enables automatic upper bound constraints on controller period (remains disabled if lower bound is disabled)
@@ -360,7 +368,7 @@ private:
 	// ^determines at what fraction of the normalized track error the maximum track keeping forward ground speed demand is reached
 	float feas_{1.0f}; // continous representation of bearing feasibility in [0,1] (0=infeasible, 1=feasible)
 	float feas_on_track_{1.0f}; // continuous bearing feasibility "on track"
-	float airspeed_buffer_{1.5f}; // size of the region above the feasibility boundary (into feasible space) where a continuous transition from feasible to infeasible is imposed [m/s]
+	float wind_ratio_buffer_{0.1f}; // a buffer region below unity wind ratio allowing continuous transition between feasible and infeasible conditions/commands
 
 	float track_error_bound_{135.0f}; // the current ground speed dependent track error bound [m]
 	float track_proximity_{0.0f}; // value in [0,1] indicating proximity to track, 0 = at track error boundary or beyond, 1 = on track
@@ -412,7 +420,7 @@ private:
 	 *
 	 * @param[in] ground_speed Vehicle ground speed [m/s]
 	 * @param[in] airspeed Vehicle airspeed [m/s]
-	 * @param[in] wind_speed Wind speed [m/s]
+	 * @param[in] wind_ratio Wind speed to airspeed ratio
 	 * @param[in] track_error Track error (magnitude) [m]
 	 * @param[in] path_curvature Path curvature at closest point on track [m^-1]
 	 * @param[in] wind_vel Wind velocity vector in inertial frame [m/s]
@@ -421,7 +429,7 @@ private:
 	 * @param[in] feas_on_track Bearing feasibility on track at the closest point
 	 * @return Adapted period [s]
 	 */
-	float adaptPeriod(const float ground_speed, const float airspeed, const float wind_speed,
+	float adaptPeriod(const float ground_speed, const float airspeed, const float wind_ratio,
 			  const float track_error, const float path_curvature, const matrix::Vector2f &wind_vel,
 			  const matrix::Vector2f &unit_path_tangent, const float feas_on_track) const;
 
@@ -437,11 +445,10 @@ private:
 	/*
 	 * Cacluates an approximation of the wind factor (see [TODO: include citation]).
 	 *
-	 * @param[in] airspeed Vehicle airspeed [m/s]
-	 * @param[in] wind_speed Wind speed [m/s]
+	 * @param[in] wind_ratio Wind speed to airspeed ratio
 	 * @return Non-dimensional wind factor approximation
 	 */
-	float windFactor(const float airspeed, const float wind_speed) const;
+	float windFactor(const float wind_ratio) const;
 
 	/*
 	 * Calculates a theoretical upper bound on the user defined period to maintain
@@ -615,12 +622,12 @@ private:
 	 *
 	 * @param[in] wind_cross_bearing 2D cross product of wind velocity and bearing vector [m/s]
 	 * @param[in] wind_dot_bearing 2D dot product of wind velocity and bearing vector [m/s]
-	 * @param[in] airspeed Vehicle airspeed [m/s]
 	 * @param[in] wind_speed Wind speed [m/s]
+	 * @param[in] wind_ratio Wind speed to airspeed ratio
 	 * @return bearing feasibility
 	 */
-	float bearingFeasibility(float wind_cross_bearing, const float wind_dot_bearing, const float airspeed,
-				 const float wind_speed) const;
+	float bearingFeasibility(const float wind_cross_bearing, const float wind_dot_bearing, const float wind_speed,
+				 const float wind_ratio) const;
 
 	/*
 	 * Calculates an additional feed-forward lateral acceleration demand considering
@@ -632,6 +639,7 @@ private:
 	 * @param[in] wind_vel Wind velocity vector [m/s]
 	 * @param[in] airspeed Vehicle airspeed [m/s]
 	 * @param[in] wind_speed Wind speed [m/s]
+	 * @param[in] wind_ratio Wind speed to airspeed ratio
 	 * @param[in] signed_track_error Signed error to track at closest point (sign
 	 *             determined by path normal direction) [m]
 	 * @param[in] path_curvature Path curvature at closest point on track [m^-1]
@@ -639,7 +647,8 @@ private:
 	 */
 	float lateralAccelFF(const matrix::Vector2f &unit_path_tangent, const matrix::Vector2f &ground_vel,
 			     const float wind_dot_upt, const float wind_cross_upt, const float airspeed,
-			     const float wind_speed, const float signed_track_error, const float path_curvature) const;
+			     const float wind_speed, const float wind_ratio, const float signed_track_error,
+			     const float path_curvature) const;
 
 	/*
 	 * Calculates a lateral acceleration demand from the heading error.
