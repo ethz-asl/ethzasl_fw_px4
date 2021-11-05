@@ -598,8 +598,7 @@ void MavlinkReceiver::handle_message_command_both(mavlink_message_t *msg, const 
 
 				switch (vehicle_status.vehicle_type) {
 				case vehicle_status_s::VEHICLE_TYPE_FIXED_WING:
-					/* atune_start = param_find("FW_AT_START"); */
-					atune_start = PARAM_INVALID;
+					atune_start = param_find("FW_AT_START");
 
 					break;
 
@@ -1768,6 +1767,14 @@ MavlinkReceiver::handle_message_serial_control(mavlink_message_t *msg)
 {
 	mavlink_serial_control_t serial_control_mavlink;
 	mavlink_msg_serial_control_decode(msg, &serial_control_mavlink);
+
+	// Check if the message is targeted at us.
+	if ((serial_control_mavlink.target_system != 0 &&
+	     mavlink_system.sysid != serial_control_mavlink.target_system) ||
+	    (serial_control_mavlink.target_component != 0 &&
+	     mavlink_system.compid != serial_control_mavlink.target_component)) {
+		return;
+	}
 
 	// we only support shell commands
 	if (serial_control_mavlink.device != SERIAL_CONTROL_DEV_SHELL

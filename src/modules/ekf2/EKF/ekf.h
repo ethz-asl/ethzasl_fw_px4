@@ -134,7 +134,7 @@ public:
 	Vector2f getWindVelocityVariance() const { return P.slice<2, 2>(22, 22).diag(); }
 
 	// get the true airspeed in m/s
-	void get_true_airspeed(float *tas) const;
+	float getTrueAirspeed() const;
 
 	// get the full covariance matrix
 	const matrix::SquareMatrix<float, 24> &covariances() const { return P; }
@@ -661,6 +661,8 @@ private:
 	bool fuseVerticalPosition(const Vector3f &innov, const Vector2f &innov_gate, const Vector3f &obs_var,
 				  Vector3f &innov_var, Vector2f &test_ratio);
 
+	void fuseGpsVelPos();
+
 	// calculate optical flow body angular rate compensation
 	// returns false if bias corrected body rate data is unavailable
 	bool calcOptFlowBodyRateComp();
@@ -802,6 +804,12 @@ private:
 
 	// control fusion of GPS observations
 	void controlGpsFusion();
+	bool shouldResetGpsFusion() const;
+	bool hasHorizontalAidingTimedOut() const;
+	bool isVelStateAlignedWithObs() const;
+	void processYawEstimatorResetRequest();
+	void processVelPosResetRequest();
+
 	void controlGpsYawFusion(bool gps_checks_passing, bool gps_checks_failing);
 
 	// control fusion of magnetometer observations
@@ -917,10 +925,12 @@ private:
 	void resetMagCov();
 
 	// perform a limited reset of the wind state covariances
-	void resetWindCovariance();
+	void resetWindCovarianceUsingAirspeed();
 
-	// perform a reset of the wind states
-	void resetWindStates();
+	// perform a reset of the wind states and related covariances
+	void resetWind();
+	void resetWindUsingAirspeed();
+	void resetWindToZero();
 
 	// check that the range finder data is continuous
 	void updateRangeDataContinuity();
@@ -953,6 +963,9 @@ private:
 	{
 		return sensor_timestamp + acceptance_interval > _time_last_imu;
 	}
+
+	void startAirspeedFusion();
+	void stopAirspeedFusion();
 
 	void startGpsFusion();
 	void stopGpsFusion();
