@@ -529,6 +529,7 @@ void NPFG::navigateWaypoints(const Vector2d &waypoint_A, const Vector2d &waypoin
 
 	Vector2f vector_A_to_B = getLocalPlanarVector(waypoint_A, waypoint_B);
 	Vector2f vector_A_to_vehicle = getLocalPlanarVector(waypoint_A, vehicle_pos);
+	Vector2f vector_B_to_vehicle = getLocalPlanarVector(waypoint_B, vehicle_pos);
 
 	if (vector_A_to_B.norm() < NPFG_EPSILON) {
 		// the waypoints are on top of each other and should be considered as a
@@ -562,6 +563,14 @@ void NPFG::navigateWaypoints(const Vector2d &waypoint_A, const Vector2d &waypoin
 			signed_track_error_ = vector_A_to_vehicle.norm();
 			guideToPoint(ground_vel, wind_vel, bearing_vec_to_point, signed_track_error_);
 		}
+
+	} else if (vector_A_to_B.dot(vector_B_to_vehicle) > 0.0f) {
+		// we are in front of waypoint B, fly directly to it until the bearing generated
+		// to the line segement between B and A is shallower than that from the
+		// bearing to the second waypoint (B).
+		unit_path_tangent_ = -vector_A_to_B.normalized();
+		signed_track_error_ = cross2D(unit_path_tangent_, vector_B_to_vehicle);
+		evaluate(ground_vel, wind_vel, unit_path_tangent_, signed_track_error_, 0.0f, true, -vector_B_to_vehicle.normalized());
 
 	} else {
 		// track the line segment between A and B
