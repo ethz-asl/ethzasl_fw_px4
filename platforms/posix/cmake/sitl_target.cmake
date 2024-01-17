@@ -182,6 +182,8 @@ set(models
 set(worlds
 	none
 	baylands
+	sloped_a
+	sloped_b
 	empty
 	ksql_airport
 	mcmillan_airfield
