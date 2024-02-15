@@ -5,6 +5,8 @@
 
 . ${R}etc/init.d-posix/airframes/1042_tiltrotor
 
+param set FW_R_RMAX 51
+
 # Camera trigger interface is MAVLink
 param set-default TRIG_INTERFACE 3
 
