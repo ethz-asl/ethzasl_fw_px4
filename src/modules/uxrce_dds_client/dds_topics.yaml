@@ -47,6 +47,9 @@ publications:
   - topic: /fmu/out/vehicle_trajectory_waypoint_desired
     type: px4_msgs::msg::VehicleTrajectoryWaypoint
 
+  - topic: /fmu/out/distance_sensor
+    type: px4_msgs::msg::DistanceSensor
+
 subscriptions:
 
   - topic: /fmu/in/offboard_control_mode
