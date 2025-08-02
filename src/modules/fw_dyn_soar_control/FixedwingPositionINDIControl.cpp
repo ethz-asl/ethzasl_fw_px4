@@ -340,8 +340,7 @@ FixedwingPositionINDIControl::vehicle_attitude_poll()
 		_att = Quatf(R_enu_frd);
 	}
 
-	if (hrt_absolute_time() - _attitude.timestamp > 20_ms
-	    && _vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_OFFBOARD) {
+	if (hrt_absolute_time() - _attitude.timestamp > 20_ms) {
 		PX4_ERR("attitude sample is too old");
 	}
 }
@@ -354,8 +353,7 @@ FixedwingPositionINDIControl::vehicle_angular_velocity_poll()
 	//
 	_omega = Vector3f(_angular_vel.xyz);
 
-	if (hrt_absolute_time() - _angular_vel.timestamp > 20_ms
-	    && _vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_OFFBOARD) {
+	if (hrt_absolute_time() - _angular_vel.timestamp > 20_ms) {
 		PX4_ERR("angular velocity sample is too old");
 	}
 }
@@ -440,13 +438,13 @@ FixedwingPositionINDIControl::soaring_estimator_shear_poll()
 			// the initial speed of the target trajectory can safely be updated during soaring :)
 			_shear_aspd = _soaring_estimator_shear.aspd;
 			_param_shear_estimated_v_max.set(_shear_v_max);
-			_param_shear_estimated_v_max.commit()
+			_param_shear_estimated_v_max.commit();
 			_param_shear_estimated_alpha.set(_shear_alpha);
-			_param_shear_estimated_alpha.commit()
+			_param_shear_estimated_alpha.commit();
 			_param_shear_estimated_h_ref.set(_shear_h_ref);
-			_param_shear_estimated_h_ref.commit()
+			_param_shear_estimated_h_ref.commit();
 			_param_shear_estimated_heading.set(_shear_heading);
-			_param_shear_estimated_heading.commit()
+			_param_shear_estimated_heading.commit();
 		}
 
 	}
@@ -697,8 +695,8 @@ FixedwingPositionINDIControl::_read_trajectory_coeffs_csv(char *filename)
 	// =======================================================================
 	bool error = false;
 
-	//char home_dir[200] = "/home/marvin/Documents/master_thesis_ADS/PX4/Git/ethzasl_fw_px4/src/modules/fw_dyn_soar_control/trajectories/";
-	char home_dir[200] = PX4_ROOTFSDIR"/fs/microsd/trajectories/";
+	char home_dir[200] = "/home/jaeyoung/src/PX4-Autopilot/src/modules/fw_dyn_soar_control/trajectories/";
+	// char home_dir[200] = PX4_ROOTFSDIR"/fs/microsd/trajectories/";
 	//PX4_ERR(home_dir);
 	strcat(home_dir, filename);
 	FILE *fp = fopen(home_dir, "r");
@@ -836,282 +834,283 @@ FixedwingPositionINDIControl::Run()
 	perf_begin(_loop_perf);
 
 	// only run controller if pos, vel, acc changed
-	if (_vehicle_angular_velocity_sub.update(&_angular_vel)) {
-		// only update parameters if they changed
-		bool params_updated = _parameter_update_sub.updated();
+	// if (_vehicle_angular_velocity_sub.update(&_angular_vel)) {
+	// only update parameters if they changed
+	bool params_updated = _parameter_update_sub.updated();
 
-		// check for parameter updates
-		if (params_updated) {
-			// clear update
-			parameter_update_s pupdate;
-			_parameter_update_sub.copy(&pupdate);
+	// check for parameter updates
+	if (params_updated) {
+		// clear update
+		parameter_update_s pupdate;
+		_parameter_update_sub.copy(&pupdate);
 
-			// update parameters from storage
-			updateParams();
-			parameters_update();
-		}
-
-		//const float dt = math::constrain((pos.timestamp - _last_run) * 1e-6f, 0.002f, 0.04f);
-		//_last_run = _local_pos.timestamp;
-
-		// check if local NED reference frame origin has changed:
-		// || (_local_pos.vxy_reset_counter != _pos_reset_counter
-		if (!map_projection_initialized(&_global_local_proj_ref)
-		    || (_global_local_proj_ref.timestamp != _local_pos.ref_timestamp)
-		    || (_local_pos.xy_reset_counter != _pos_reset_counter)
-		    || (_local_pos.z_reset_counter != _alt_reset_counter)) {
-			// initialize projection
-			map_projection_init_timestamped(&_global_local_proj_ref, _local_pos.ref_lat, _local_pos.ref_lon,
-							_local_pos.ref_timestamp);
-			// project the origin of the soaring ENU frame to the current NED frame
-			map_projection_project(&_global_local_proj_ref, _origin_lat, _origin_lon, &_origin_N, &_origin_E);
-			_origin_D =  _local_pos.ref_alt - _origin_alt;
-			PX4_INFO("local reference frame updated");
-		}
-
-		// update reset counters
-		_pos_reset_counter = _local_pos.xy_reset_counter;
-		_alt_reset_counter = _local_pos.z_reset_counter;
-
-		// run polls
-		vehicle_status_poll();
-		airspeed_poll();
-		airflow_aoa_poll();
-		airflow_slip_poll();
-		rc_channels_poll();
-		manual_control_setpoint_poll();
-		vehicle_local_position_poll();
-		vehicle_attitude_poll();
-		vehicle_acceleration_poll();
-		vehicle_angular_velocity_poll();
-		vehicle_angular_acceleration_poll();
-		soaring_controller_status_poll();
-
-		// update the shear estimate, only target airspeed is updated in soaring mode
-		soaring_estimator_shear_poll();
-
-		// update transform from trajectory frame to ENU frame (soaring frame)
-		_compute_trajectory_transform();
-
-		// ===============================
-		// compute wind pseudo-measurement
-		// ===============================
-		Vector3f wind = _compute_wind_estimate();
-		_set_wind_estimate(wind);
-		Vector3f wind_EKF = _compute_wind_estimate_EKF();
-		_set_wind_estimate_EKF(wind_EKF);
-
-
-		// only run actuators poll, when our module is not publishing:
-		if (_vehicle_status.nav_state != vehicle_status_s::NAVIGATION_STATE_OFFBOARD) {
-			actuator_controls_poll();
-		}
-
-		// =================================
-		// get reference point on trajectory
-		// =================================
-		float t_ref = _get_closest_t(_pos);
-
-		// =================================================================
-		// possibly select a new trajectory, if we are finishing the old one
-		// =================================================================
-		if (!_switch_origin_hardcoded && t_ref >= 0.97f && (hrt_absolute_time() - _last_time_trajec) > 1000000) {
-			_select_soaring_trajectory();
-			_last_time_trajec = hrt_absolute_time();
-		}
-
-		// ============================
-		// compute reference kinematics
-		// ============================
-		// downscale velocity to match current one,
-		// terminal time is determined such that current velocity is met
-		Vector3f v_ref_ = _get_velocity_ref(t_ref, 1.0f);
-		float T = sqrtf((v_ref_ * v_ref_) / (_vel * _vel + 0.001f));
-		Vector3f pos_ref = _get_position_ref(t_ref);                    // in inertial ENU
-		Vector3f vel_ref = _get_velocity_ref(t_ref, T);                 // in inertial ENU
-		Vector3f acc_ref = _get_acceleration_ref(t_ref, T);             // gravity-corrected acceleration (ENU)
-		Quatf q = _get_attitude_ref(t_ref, T);
-		Vector3f omega_ref = _get_angular_velocity_ref(t_ref, T);       // body angular velocity
-		Vector3f alpha_ref = _get_angular_acceleration_ref(t_ref, T);   // body angular acceleration
-
-		// =====================
-		// compute control input
-		// =====================
-		Vector3f ctrl = _compute_INDI_stage_1(pos_ref, vel_ref, acc_ref, omega_ref, alpha_ref);
-		Vector3f ctrl1 = _compute_INDI_stage_2(ctrl);
-
-		// ============================
-		// compute actuator deflections
-		// ============================
-		Vector3f ctrl2 = _compute_actuator_deflections(ctrl1);
-
-		// =================================
-		// publish offboard control commands
-		// =================================
-		offboard_control_mode_s ocm{};
-		ocm.actuator = true;
-		ocm.timestamp = hrt_absolute_time();
-		_offboard_control_mode_pub.publish(ocm);
-
-		// Publish actuator controls only once in OFFBOARD
-		if (_vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_OFFBOARD) {
-
-			// ========================================
-			// publish controller position in ENU frame
-			// ========================================
-			_soaring_controller_position.timestamp = hrt_absolute_time();
-
-			for (int i = 0; i < 3; i++) {
-				_soaring_controller_position.pos[i] = _pos(i);
-				_soaring_controller_position.vel[i] = _vel(i);
-				_soaring_controller_position.acc[i] = _acc(i);
-			}
-
-			_soaring_controller_position_pub.publish(_soaring_controller_position);
-
-			// ====================================
-			// publish controller position setpoint
-			// ====================================
-			_soaring_controller_position_setpoint.timestamp = hrt_absolute_time();
-
-			for (int i = 0; i < 3; i++) {
-				_soaring_controller_position_setpoint.pos[i] = pos_ref(i);
-				_soaring_controller_position_setpoint.vel[i] = vel_ref(i);
-				_soaring_controller_position_setpoint.acc[i] = acc_ref(i);
-				_soaring_controller_position_setpoint.f_command[i] = _f_command(i);
-				_soaring_controller_position_setpoint.m_command[i] = _m_command(i);
-				_soaring_controller_position_setpoint.w_err[i] = _w_err(i);
-			}
-
-			_soaring_controller_position_setpoint_pub.publish(_soaring_controller_position_setpoint);
-
-			// =====================
-			// publish control input
-			// =====================
-			//_angular_accel_sp = {};
-			_angular_accel_sp.timestamp = hrt_absolute_time();
-			//_angular_accel_sp.timestamp_sample = hrt_absolute_time();
-			_angular_accel_sp.xyz[0] = ctrl(0);
-			_angular_accel_sp.xyz[1] = ctrl(1);
-			_angular_accel_sp.xyz[2] = ctrl(2);
-			_angular_accel_sp_pub.publish(_angular_accel_sp);
-
-			// =========================
-			// publish attitude setpoint
-			// =========================
-			//_attitude_sp = {};
-			Quatf q_sp(_R_enu_to_ned * Dcmf(q));
-			_attitude_sp.timestamp = hrt_absolute_time();
-			_attitude_sp.q_d[0] = q_sp(0);
-			_attitude_sp.q_d[1] = q_sp(1);
-			_attitude_sp.q_d[2] = q_sp(2);
-			_attitude_sp.q_d[3] = q_sp(3);
-			_attitude_sp_pub.publish(_attitude_sp);
-
-			// ======================
-			// publish rates setpoint
-			// ======================
-			//_angular_vel_sp = {};
-			_angular_vel_sp.timestamp = hrt_absolute_time();
-			_angular_vel_sp.roll = omega_ref(0);
-			_angular_vel_sp.pitch = omega_ref(1);
-			_angular_vel_sp.yaw = omega_ref(2);
-			_angular_vel_sp_pub.publish(_angular_vel_sp);
-
-			// =========================
-			// publish acutator controls
-			// =========================
-			//_actuators = {};
-			_actuators.timestamp = hrt_absolute_time();
-			_actuators.timestamp_sample = hrt_absolute_time();
-			_actuators.control[actuator_controls_s::INDEX_ROLL] = ctrl2(0);
-			_actuators.control[actuator_controls_s::INDEX_PITCH] = ctrl2(1);
-			_actuators.control[actuator_controls_s::INDEX_YAW] = ctrl2(2);
-			_actuators.control[actuator_controls_s::INDEX_THROTTLE] = _thrust;
-			_actuators_0_pub.publish(_actuators);
-			//print_message(_actuators);
-
-			// =====================
-			// publish wind estimate
-			// =====================
-			//_soaring_controller_wind = {};
-			_soaring_controller_wind.timestamp = hrt_absolute_time();
-			_soaring_controller_wind.wind_estimate[0] = wind(0);
-			_soaring_controller_wind.wind_estimate[1] = wind(1);
-			_soaring_controller_wind.wind_estimate[2] = wind(2);
-			_soaring_controller_wind.wind_estimate_filtered[0] = _wind_estimate_EKF(0);
-			_soaring_controller_wind.wind_estimate_filtered[1] = _wind_estimate_EKF(1);
-			_soaring_controller_wind.wind_estimate_filtered[2] = _wind_estimate_EKF(2);
-			_soaring_controller_wind.position[0] = _pos(0);
-			_soaring_controller_wind.position[1] = _pos(1);
-			_soaring_controller_wind.position[2] = _pos(2);
-			_soaring_controller_wind.airspeed = _true_airspeed;
-
-			if (_switch_cl_soaring) {
-				// always update shear params in closed loop soaring mode
-				_soaring_controller_wind.lock_params = false;
-
-			} else {
-				// only update in manual feedthrough in open loop soaring
-				_soaring_controller_wind.lock_params = !_switch_manual;
-			}
-
-			//Eulerf e(Quatf(_attitude.q));
-			//float bank = e(0);
-			// only declare wind estimate valid for shear estimator, if we are close to the soaring center
-			if ((float)sqrtf(powf(_pos(0), 2) + powf(_pos(1), 2)) < 100.f) {
-				_soaring_controller_wind.valid = true;
-
-			} else {
-				_soaring_controller_wind.valid = false;
-			}
-
-			_soaring_controller_wind_pub.publish(_soaring_controller_wind);
-
-
-
-			if (_counter == 100) {
-				_counter = 0;
-				//PX4_INFO("Feedthrough switch: \t%.2f", (double)(_rc_channels.channels[5]));
-				//PX4_INFO("frequency: \t%.3f", (double)(1000000*100)/(hrt_absolute_time()-_last_time));
-				_last_time = hrt_absolute_time();
-
-			} else {
-				_counter += 1;
-			}
-		}
-
-		// ===========================
-		// publish rate control status
-		// ===========================
-		rate_ctrl_status_s rate_ctrl_status{};
-		rate_ctrl_status.timestamp = hrt_absolute_time();
-		rate_ctrl_status.rollspeed_integ = 0.0f;
-		rate_ctrl_status.pitchspeed_integ = 0.0f;
-		rate_ctrl_status.yawspeed_integ = 0.0f;
-		_rate_ctrl_status_pub.publish(rate_ctrl_status);
-
-		// ==============================
-		// publish soaring control status
-		// ==============================
-		//_soaring_controller_heartbeat_s _soaring_controller_heartbeat{};
-		_soaring_controller_heartbeat.timestamp = hrt_absolute_time();
-		_soaring_controller_heartbeat.heartbeat = hrt_absolute_time();
-		_soaring_controller_heartbeat_pub.publish(_soaring_controller_heartbeat);
-
-		// ====================
-		// publish debug values
-		// ====================
-		Dcmf R_ib(_att);
-		Dcmf R_bi(R_ib.transpose());
-		Vector3f vel_body = R_bi * (_vel - _wind_estimate);
-		_slip = atan2f(vel_body(1), vel_body(0)) * 180.f / M_PI_2_F;
-		_debug_value.timestamp = hrt_absolute_time();
-		_debug_value.value = _slip;
-		_debug_value_pub.publish(_debug_value);
-
-		perf_end(_loop_perf);
+		// update parameters from storage
+		updateParams();
+		parameters_update();
 	}
+
+	//const float dt = math::constrain((pos.timestamp - _last_run) * 1e-6f, 0.002f, 0.04f);
+	//_last_run = _local_pos.timestamp;
+
+	// check if local NED reference frame origin has changed:
+	// || (_local_pos.vxy_reset_counter != _pos_reset_counter
+	if (!map_projection_initialized(&_global_local_proj_ref)
+	    || (_global_local_proj_ref.timestamp != _local_pos.ref_timestamp)
+	    || (_local_pos.xy_reset_counter != _pos_reset_counter)
+	    || (_local_pos.z_reset_counter != _alt_reset_counter)) {
+		// initialize projection
+		map_projection_init_timestamped(&_global_local_proj_ref, _local_pos.ref_lat, _local_pos.ref_lon,
+						_local_pos.ref_timestamp);
+		// project the origin of the soaring ENU frame to the current NED frame
+		map_projection_project(&_global_local_proj_ref, _origin_lat, _origin_lon, &_origin_N, &_origin_E);
+		_origin_D =  _local_pos.ref_alt - _origin_alt;
+		PX4_INFO("local reference frame updated");
+	}
+
+	// update reset counters
+	_pos_reset_counter = _local_pos.xy_reset_counter;
+	_alt_reset_counter = _local_pos.z_reset_counter;
+
+	// run polls
+	vehicle_status_poll();
+	airspeed_poll();
+	airflow_aoa_poll();
+	airflow_slip_poll();
+	rc_channels_poll();
+	manual_control_setpoint_poll();
+	vehicle_local_position_poll();
+	vehicle_attitude_poll();
+	vehicle_acceleration_poll();
+	vehicle_angular_velocity_poll();
+	vehicle_angular_acceleration_poll();
+	soaring_controller_status_poll();
+
+	// update the shear estimate, only target airspeed is updated in soaring mode
+	soaring_estimator_shear_poll();
+
+	// update transform from trajectory frame to ENU frame (soaring frame)
+	_compute_trajectory_transform();
+
+	// ===============================
+	// compute wind pseudo-measurement
+	// ===============================
+	Vector3f wind = _compute_wind_estimate();
+	_set_wind_estimate(wind);
+	Vector3f wind_EKF = _compute_wind_estimate_EKF();
+	_set_wind_estimate_EKF(wind_EKF);
+
+
+	// only run actuators poll, when our module is not publishing:
+	// if (_vehicle_status.nav_state != vehicle_status_s::NAVIGATION_STATE_OFFBOARD) {
+	actuator_controls_poll();
+	// }
+
+	// =================================
+	// get reference point on trajectory
+	// =================================
+	float t_ref = _get_closest_t(_pos);
+
+	// =================================================================
+	// possibly select a new trajectory, if we are finishing the old one
+	// =================================================================
+	if (!_switch_origin_hardcoded && t_ref >= 0.97f && (hrt_absolute_time() - _last_time_trajec) > 1000000) {
+		_select_soaring_trajectory();
+		_last_time_trajec = hrt_absolute_time();
+	}
+
+	// ============================
+	// compute reference kinematics
+	// ============================
+	// downscale velocity to match current one,
+	// terminal time is determined such that current velocity is met
+	Vector3f v_ref_ = _get_velocity_ref(t_ref, 1.0f);
+	float T = sqrtf((v_ref_ * v_ref_) / (_vel * _vel + 0.001f));
+	Vector3f pos_ref = _get_position_ref(t_ref);                    // in inertial ENU
+	Vector3f vel_ref = _get_velocity_ref(t_ref, T);                 // in inertial ENU
+	Vector3f acc_ref = _get_acceleration_ref(t_ref, T);             // gravity-corrected acceleration (ENU)
+	Quatf q = _get_attitude_ref(t_ref, T);
+	Vector3f omega_ref = _get_angular_velocity_ref(t_ref, T);       // body angular velocity
+	Vector3f alpha_ref = _get_angular_acceleration_ref(t_ref, T);   // body angular acceleration
+
+	// =====================
+	// compute control input
+	// =====================
+	Vector3f ctrl = _compute_INDI_stage_1(pos_ref, vel_ref, acc_ref, omega_ref, alpha_ref);
+	Vector3f ctrl1 = _compute_INDI_stage_2(ctrl);
+
+	// ============================
+	// compute actuator deflections
+	// ============================
+	Vector3f ctrl2 = _compute_actuator_deflections(ctrl1);
+
+	// =================================
+	// publish offboard control commands
+	// =================================
+	offboard_control_mode_s ocm{};
+	ocm.actuator = true;
+	ocm.timestamp = hrt_absolute_time();
+	_offboard_control_mode_pub.publish(ocm);
+
+	// Publish actuator controls only once in OFFBOARD
+	// if (_vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_OFFBOARD) {
+
+	// ========================================
+	// publish controller position in ENU frame
+	// ========================================
+	_soaring_controller_position.timestamp = hrt_absolute_time();
+
+	for (int i = 0; i < 3; i++) {
+		_soaring_controller_position.pos[i] = _pos(i);
+		_soaring_controller_position.vel[i] = _vel(i);
+		_soaring_controller_position.acc[i] = _acc(i);
+	}
+
+	_soaring_controller_position_pub.publish(_soaring_controller_position);
+
+	// ====================================
+	// publish controller position setpoint
+	// ====================================
+	_soaring_controller_position_setpoint.timestamp = hrt_absolute_time();
+
+	for (int i = 0; i < 3; i++) {
+		_soaring_controller_position_setpoint.pos[i] = pos_ref(i);
+		_soaring_controller_position_setpoint.vel[i] = vel_ref(i);
+		_soaring_controller_position_setpoint.acc[i] = acc_ref(i);
+		_soaring_controller_position_setpoint.f_command[i] = _f_command(i);
+		_soaring_controller_position_setpoint.m_command[i] = _m_command(i);
+		_soaring_controller_position_setpoint.w_err[i] = _w_err(i);
+	}
+
+	_soaring_controller_position_setpoint_pub.publish(_soaring_controller_position_setpoint);
+
+	// =====================
+	// publish control input
+	// =====================
+	//_angular_accel_sp = {};
+	_angular_accel_sp.timestamp = hrt_absolute_time();
+	//_angular_accel_sp.timestamp_sample = hrt_absolute_time();
+	_angular_accel_sp.xyz[0] = ctrl(0);
+	_angular_accel_sp.xyz[1] = ctrl(1);
+	_angular_accel_sp.xyz[2] = ctrl(2);
+	_angular_accel_sp_pub.publish(_angular_accel_sp);
+
+	// =========================
+	// publish attitude setpoint
+	// =========================
+	//_attitude_sp = {};
+	Quatf q_sp(_R_enu_to_ned * Dcmf(q));
+	_attitude_sp.timestamp = hrt_absolute_time();
+	_attitude_sp.q_d[0] = q_sp(0);
+	_attitude_sp.q_d[1] = q_sp(1);
+	_attitude_sp.q_d[2] = q_sp(2);
+	_attitude_sp.q_d[3] = q_sp(3);
+	_attitude_sp_pub.publish(_attitude_sp);
+
+	// ======================
+	// publish rates setpoint
+	// ======================
+	//_angular_vel_sp = {};
+	_angular_vel_sp.timestamp = hrt_absolute_time();
+	_angular_vel_sp.roll = omega_ref(0);
+	_angular_vel_sp.pitch = omega_ref(1);
+	_angular_vel_sp.yaw = omega_ref(2);
+	_angular_vel_sp_pub.publish(_angular_vel_sp);
+
+	// =========================
+	// publish acutator controls
+	// =========================
+	//_actuators = {};
+	_actuators.timestamp = hrt_absolute_time();
+	_actuators.timestamp_sample = hrt_absolute_time();
+	_actuators.control[actuator_controls_s::INDEX_ROLL] = PX4_ISFINITE(ctrl2(0)) ? ctrl2(0) : 0.0f;
+	_actuators.control[actuator_controls_s::INDEX_PITCH] = PX4_ISFINITE(ctrl2(0)) ? ctrl2(1) : 0.0f;
+	_actuators.control[actuator_controls_s::INDEX_YAW] = ctrl2(2);
+	_actuators.control[actuator_controls_s::INDEX_THROTTLE] = _thrust;
+	_actuators_0_pub.publish(_actuators);
+	print_message(_actuators);
+
+	// =====================
+	// publish wind estimate
+	// =====================
+	//_soaring_controller_wind = {};
+	_soaring_controller_wind.timestamp = hrt_absolute_time();
+	_soaring_controller_wind.wind_estimate[0] = wind(0);
+	_soaring_controller_wind.wind_estimate[1] = wind(1);
+	_soaring_controller_wind.wind_estimate[2] = wind(2);
+	_soaring_controller_wind.wind_estimate_filtered[0] = _wind_estimate_EKF(0);
+	_soaring_controller_wind.wind_estimate_filtered[1] = _wind_estimate_EKF(1);
+	_soaring_controller_wind.wind_estimate_filtered[2] = _wind_estimate_EKF(2);
+	_soaring_controller_wind.position[0] = _pos(0);
+	_soaring_controller_wind.position[1] = _pos(1);
+	_soaring_controller_wind.position[2] = _pos(2);
+	_soaring_controller_wind.airspeed = _true_airspeed;
+
+	if (_switch_cl_soaring) {
+		// always update shear params in closed loop soaring mode
+		_soaring_controller_wind.lock_params = false;
+
+	} else {
+		// only update in manual feedthrough in open loop soaring
+		_soaring_controller_wind.lock_params = !_switch_manual;
+	}
+
+	//Eulerf e(Quatf(_attitude.q));
+	//float bank = e(0);
+	// only declare wind estimate valid for shear estimator, if we are close to the soaring center
+	if ((float)sqrtf(powf(_pos(0), 2) + powf(_pos(1), 2)) < 100.f) {
+		_soaring_controller_wind.valid = true;
+
+	} else {
+		_soaring_controller_wind.valid = false;
+	}
+
+	_soaring_controller_wind_pub.publish(_soaring_controller_wind);
+
+
+
+	if (_counter == 100) {
+		_counter = 0;
+		//PX4_INFO("Feedthrough switch: \t%.2f", (double)(_rc_channels.channels[5]));
+		//PX4_INFO("frequency: \t%.3f", (double)(1000000*100)/(hrt_absolute_time()-_last_time));
+		_last_time = hrt_absolute_time();
+
+	} else {
+		_counter += 1;
+	}
+
+	// }
+
+	// ===========================
+	// publish rate control status
+	// ===========================
+	rate_ctrl_status_s rate_ctrl_status{};
+	rate_ctrl_status.timestamp = hrt_absolute_time();
+	rate_ctrl_status.rollspeed_integ = 0.0f;
+	rate_ctrl_status.pitchspeed_integ = 0.0f;
+	rate_ctrl_status.yawspeed_integ = 0.0f;
+	_rate_ctrl_status_pub.publish(rate_ctrl_status);
+
+	// ==============================
+	// publish soaring control status
+	// ==============================
+	//_soaring_controller_heartbeat_s _soaring_controller_heartbeat{};
+	_soaring_controller_heartbeat.timestamp = hrt_absolute_time();
+	_soaring_controller_heartbeat.heartbeat = hrt_absolute_time();
+	_soaring_controller_heartbeat_pub.publish(_soaring_controller_heartbeat);
+
+	// ====================
+	// publish debug values
+	// ====================
+	Dcmf R_ib(_att);
+	Dcmf R_bi(R_ib.transpose());
+	Vector3f vel_body = R_bi * (_vel - _wind_estimate);
+	_slip = atan2f(vel_body(1), vel_body(0)) * 180.f / M_PI_2_F;
+	_debug_value.timestamp = hrt_absolute_time();
+	_debug_value.value = _slip;
+	_debug_value_pub.publish(_debug_value);
+
+	perf_end(_loop_perf);
+	// }
 
 }
 
